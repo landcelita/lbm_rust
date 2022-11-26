@@ -12,7 +12,7 @@ pub enum MeteorologicalType {
     Pressure,
 }
 
-fn get_meteorological_data(datetimes: Vec<DateTime<Utc>>) -> HashMap<(DateTime<Utc>, MeteorologicalType), Array2<f64>> {
+pub fn get_meteorological_data(datetimes: Vec<DateTime<Utc>>) -> HashMap<(DateTime<Utc>, MeteorologicalType), Array2<f64>> {
     dotenv().ok();
     let data_dir = env::var("DATA_DIR").unwrap();
     let mut meteorological_data = HashMap::new();

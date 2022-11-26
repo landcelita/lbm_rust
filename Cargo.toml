@@ -8,5 +8,7 @@ edition = "2021"
 [dependencies]
 ndarray-npy = "0.8.1"
 ndarray = "0.15.6"
+ndarray-parallel = "0.1"
 chrono = "0.4.23"
 dotenv = "0.15.0"
+rayon = "1.5"
