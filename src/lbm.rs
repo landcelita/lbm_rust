@@ -13,7 +13,7 @@ use ndarray_parallel::prelude::*;
 // C:係数
 
 const C: [[f64; 3]; 3] = [[1.0/36.0, 1.0/9.0, 1.0/36.0], [1.0/9.0, 4.0/9.0, 1.0/9.0], [1.0/36.0, 1.0/9.0, 1.0/36.0]];
-const ERROR_DELTA: f64 = 0.00000000000001;
+const ERROR_DELTA: f64 = 0.00000000001;
 
 pub struct InputField {
     row: usize,
@@ -99,6 +99,10 @@ impl StreamedField {
         let margin = self.margin as i32;
         let row = self.row as i32;
         let col = self.col as i32;
+        self.u_vert.slice_mut(s![margin..row-margin, margin..col-margin]).fill(0.0);
+        self.u_hori.slice_mut(s![margin..row-margin, margin..col-margin]).fill(0.0);
+        self.rho.slice_mut(s![margin..row-margin, margin..col-margin]).fill(0.0);
+
         for dr in -1..=1_i32 {
             for dc in -1..=1_i32 {
                 let f_slice = self.f.slice_mut(s![margin..row-margin, margin..col-margin, dr+1, dc+1]);
@@ -109,8 +113,27 @@ impl StreamedField {
                     .for_each(|f, w0, w1, f_prev| {
                         *f = w0 + w1 * f_prev;
                     });
+                
+                let f_slice = self.f.slice(s![margin..row-margin, margin..col-margin, dr+1, dc+1]);
+                let mut u_vert_slice = self.u_vert.slice_mut(s![margin..row-margin, margin..col-margin]);
+                let mut u_hori_slice = self.u_hori.slice_mut(s![margin..row-margin, margin..col-margin]);
+                let mut rho_slice = self.rho.slice_mut(s![margin..row-margin, margin..col-margin]);
+                Zip::from(f_slice).and(u_vert_slice).and(u_hori_slice).and(rho_slice)
+                    .for_each(|f, u_vert, u_hori, rho|{
+                        *u_vert += f * dr as f64;
+                        *u_hori += f * dc as f64;
+                        *rho += f;
+                    });
             }
         }
+
+        let mut u_vert_slice = self.u_vert.slice_mut(s![margin..row-margin, margin..col-margin]);
+        let mut u_hori_slice = self.u_hori.slice_mut(s![margin..row-margin, margin..col-margin]);
+        let rho_slice = self.rho.slice(s![margin..row-margin, margin..col-margin]);
+        Zip::from(u_vert_slice).and(u_hori_slice).and(rho_slice).for_each(|u_vert, u_hori, rho| {
+            *u_vert /= rho;
+            *u_hori /= rho;
+        });
     }
 }
 
@@ -155,20 +178,29 @@ mod tests {
         streaming_weight.w0 = streaming_weight.w0 + Array::range(0., 40.2, 0.5).into_shape((3, 3, 3, 3)).unwrap();
         streaming_weight.w1 = streaming_weight.w1 + Array::range(81., 0.5, -1.).into_shape((3, 3, 3, 3)).unwrap(); // あえて足していることに注意
         streamed_field.stream(&input_field, &streaming_weight);
-        let f = streamed_field.f;
+        // println!("{}", streamed_field.f);
+        // println!("{}", streamed_field.u_vert);
+        // println!("{}", streamed_field.u_hori);
+        // println!("{}", streamed_field.rho);
         for r in 0..=2 {
             for c in 0..=2 {
+                if r == 1 && c == 1 { continue; }
+                assert!( streamed_field.u_vert.get((r, c)).unwrap().is_nan() );
+                assert!( streamed_field.u_hori.get((r, c)).unwrap().is_nan() );
+                assert!( streamed_field.rho.get((r, c)).unwrap().is_nan() );
+
                 for dr in 0..=2 {
                     for dc in 0..=2 {
-                        if r == 1 && c == 1 { continue; }
-                        assert!( f.get((r, c, dr, dc)).unwrap().is_nan() );
+                        assert!( streamed_field.f.get((r, c, dr, dc)).unwrap().is_nan() );
                     }
                 }
             }
         }
-        // println!("{}", f);
-        assert_delta!( *f.get((1, 1, 1, 1)).unwrap(), 1742.0, ERROR_DELTA );
-        assert_delta!( *f.get((1, 1, 0, 2)).unwrap(), 2527.0, ERROR_DELTA );
-        assert_delta!( *f.get((1, 1, 1, 0)).unwrap(), 2126.5, ERROR_DELTA );
+        assert_delta!( *streamed_field.f.get((1, 1, 1, 1)).unwrap(), 1742.0, ERROR_DELTA );
+        assert_delta!( *streamed_field.f.get((1, 1, 0, 2)).unwrap(), 2527.0, ERROR_DELTA );
+        assert_delta!( *streamed_field.f.get((1, 1, 1, 0)).unwrap(), 2126.5, ERROR_DELTA );
+        assert_delta!( *streamed_field.rho.get((1, 1)).unwrap(), 16158.0, ERROR_DELTA );
+        assert_delta!( *streamed_field.u_vert.get((1, 1)).unwrap(), -0.41942072038, ERROR_DELTA );
+        assert_delta!( *streamed_field.u_hori.get((1, 1)).unwrap(), -0.13980690679, ERROR_DELTA );
     }
 }
