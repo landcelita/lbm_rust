@@ -1,4 +1,4 @@
-use ndarray::{Array2, Array4, arr2, stack, Axis, Zip};
+use ndarray::{Array2, Array4, arr2, stack, Axis, Zip, s};
 use ndarray_parallel::prelude::*;
 
 // 計算できない値についてはNaNを入れる
@@ -19,17 +19,18 @@ pub struct InputField {
     row: usize,
     col: usize,
     f: Array4<f64>,
-    u_vert: Array4<f64>, // 計算の都合上4Darrayとする(最後の(3, 3)は同じ値)
-    u_hori: Array4<f64>,
-    rho: Array4<f64>,
+    u_vert: Array2<f64>, // 計算の都合上4Darrayとする(最後の(3, 3)は同じ値)
+    u_hori: Array2<f64>,
+    // u2: Array2<f64>,
+    rho: Array2<f64>,
 }
 
 impl InputField {
     pub fn new(row: usize, col: usize) -> InputField {
         let f = Array4::<f64>::zeros((row, col, 3, 3));
-        let u_vert = Array4::<f64>::zeros((row, col, 3, 3));
-        let u_hori = Array4::<f64>::zeros((row, col, 3, 3));
-        let rho = Array4::<f64>::zeros((row, col, 3, 3));
+        let u_vert = Array2::<f64>::zeros((row, col));
+        let u_hori = Array2::<f64>::zeros((row, col));
+        let rho = Array2::<f64>::zeros((row, col));
         InputField { row, col, f, u_vert, u_hori, rho }
     }
 
@@ -37,30 +38,29 @@ impl InputField {
         if [self.row, self.col] != u_vert.shape() || [self.row, self.col] != u_hori.shape() || [self.row, self.col] != rho.shape() {
             panic!("panicked at line {} in {}", line!(), file!());
         }
-        let u_vert = stack![Axis(2), u_vert, u_vert, u_vert];
-        let u_vert = stack![Axis(3), u_vert, u_vert, u_vert];
         self.u_vert = u_vert;
-        let u_hori = stack![Axis(2), u_hori, u_hori, u_hori];
-        let u_hori = stack![Axis(3), u_hori, u_hori, u_hori];
         self.u_hori = u_hori;
-        let rho = stack![Axis(2), rho, rho, rho];
-        let rho = stack![Axis(3), rho, rho, rho];
         self.rho = rho;
-        
-        Zip::indexed(&mut self.f).and(&self.u_vert).and(&self.u_hori).and(&self.rho)
-            .for_each(|(_, _, dr, dc), f, u_vert, u_hori, rho| {
-                let dr_f = dr as f64 - 1.0; // -1., 0., 1.のいずれかに変換
-                let dc_f = dc as f64 - 1.0;
-                let u2 = u_vert * u_vert + u_hori * u_hori; // ここちょっと無駄な気もする
-                let u_prod = u_vert * dr_f + u_hori * dc_f;
-                *f = C[dr][dc] * rho * (1.0 + (3.0 + 4.5 * u_prod) * u_prod - 1.5 * u2);
-            });
+
+        for dr in -1..=1_i32 { 
+            for dc in -1..=1_i32 {
+                let f_slice = self.f.slice_mut(s![.., .., dr+1, dc+1]);
+                Zip::from(f_slice).and(&self.u_vert).and(&self.u_hori).and(&self.rho)
+                    .for_each(|f, u_vert, u_hori, rho| {
+                        let dr_f = dr as f64; // -1., 0., 1.のいずれかに変換
+                        let dc_f = dc as f64;
+                        let u2 = u_vert * u_vert + u_hori * u_hori; // ここちょっと無駄な気もする
+                        let u_prod = u_vert * dr_f + u_hori * dc_f;
+                        *f = C[(dr+1) as usize][(dc+1) as usize] * rho * (1.0 + (3.0 + 4.5 * u_prod) * u_prod - 1.5 * u2);
+                    })
+            }
+        }
     }
 }
 
 macro_rules! assert_delta {
     ($x:expr, $y:expr, $d:expr) => {
-        if !($x - $y < $d || $y - $x < $d) { panic!(); }
+        if !($x - $y < $d && $y - $x < $d) { panic!("left: {}, right: {}", $x, $y); }
     }
 }
 
@@ -86,7 +86,7 @@ mod tests {
         let rho = arr2(&[[1.0, 0.8], [0.9, 1.1]]);
         input_field.set(u_vert, u_hori, rho);
         assert_delta!( 0.39111111111111111111111, *input_field.f.get((0, 0, 1, 1)).unwrap(), ERROR_DELTA ); // 1
-        assert_delta!( -0.00944444444444444444444, *input_field.f.get((0, 1, 0, 2)).unwrap(), ERROR_DELTA ); // 2
+        assert_delta!( 0.00822222222222222222222, *input_field.f.get((0, 1, 0, 2)).unwrap(), ERROR_DELTA ); // 2
         assert_delta!( 0.05622222222222222222222, *input_field.f.get((1, 1, 1, 0)).unwrap(), ERROR_DELTA ); // 3
     }
 }
