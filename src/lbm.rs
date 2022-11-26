@@ -1,4 +1,4 @@
-use ndarray::{Array2, Array4, arr2, stack, Axis, Zip, s};
+use ndarray::{Array, Array2, Array4, arr2, stack, Axis, Zip, s};
 use ndarray_parallel::prelude::*;
 
 // 計算できない値についてはNaNを入れる
@@ -19,9 +19,28 @@ pub struct InputField {
     row: usize,
     col: usize,
     f: Array4<f64>,
-    u_vert: Array2<f64>, // 計算の都合上4Darrayとする(最後の(3, 3)は同じ値)
+    u_vert: Array2<f64>,
     u_hori: Array2<f64>,
     // u2: Array2<f64>,
+    rho: Array2<f64>,
+}
+
+pub struct StreamingWeight {
+    row: usize,
+    col: usize,
+    margin: usize,
+    w0: Array4<f64>,
+    w1: Array4<f64>,
+    delta: Array4<f64>,
+}
+
+pub struct StreamedField {
+    row: usize,
+    col: usize,
+    margin: usize,
+    f: Array4<f64>,
+    u_vert: Array2<f64>,
+    u_hori: Array2<f64>,
     rho: Array2<f64>,
 }
 
@@ -58,6 +77,43 @@ impl InputField {
     }
 }
 
+impl StreamingWeight {
+    pub fn new(row: usize, col: usize, margin: usize) -> StreamingWeight {
+        let w0 = Array4::<f64>::zeros((row, col, 3, 3));
+        let w1 = Array4::<f64>::from_elem((row, col, 3, 3), 1.0);
+        let delta = Array4::<f64>::zeros((row, col, 3, 3));
+        StreamingWeight { row, col, margin, w0, w1, delta }
+    }
+}
+
+impl StreamedField {
+    pub fn new(row: usize, col: usize, margin: usize) -> StreamedField {
+        let f = Array4::<f64>::from_elem((row, col, 3, 3), f64::NAN);
+        let u_vert = Array2::<f64>::from_elem((row, col), f64::NAN);
+        let u_hori = Array2::<f64>::from_elem((row, col), f64::NAN);
+        let rho = Array2::<f64>::from_elem((row, col), f64::NAN);
+        StreamedField { row, col, margin, f, u_vert, u_hori, rho }
+    }
+
+    pub fn stream(self: &mut Self, input_field: &InputField, streaming_weight: &StreamingWeight) {
+        let margin = self.margin as i32;
+        let row = self.row as i32;
+        let col = self.col as i32;
+        for dr in -1..=1_i32 {
+            for dc in -1..=1_i32 {
+                let f_slice = self.f.slice_mut(s![margin..row-margin, margin..col-margin, dr+1, dc+1]);
+                let w0_slice = streaming_weight.w0.slice(s![margin..row-margin, margin..col-margin, dr+1, dc+1]);
+                let w1_slice = streaming_weight.w1.slice(s![margin..row-margin, margin..col-margin, dr+1, dc+1]);
+                let f_prev_slice = input_field.f.slice(s![margin-dr..row-dr-margin, margin-dc..col-dc-margin, dr+1, dc+1]);
+                Zip::from(f_slice).and(w0_slice).and(w1_slice).and(f_prev_slice)
+                    .for_each(|f, w0, w1, f_prev| {
+                        *f = w0 + w1 * f_prev;
+                    });
+            }
+        }
+    }
+}
+
 macro_rules! assert_delta {
     ($x:expr, $y:expr, $d:expr) => {
         if !($x - $y < $d && $y - $x < $d) { panic!("left: {}, right: {}", $x, $y); }
@@ -88,5 +144,31 @@ mod tests {
         assert_delta!( 0.39111111111111111111111, *input_field.f.get((0, 0, 1, 1)).unwrap(), ERROR_DELTA ); // 1
         assert_delta!( 0.00822222222222222222222, *input_field.f.get((0, 1, 0, 2)).unwrap(), ERROR_DELTA ); // 2
         assert_delta!( 0.05622222222222222222222, *input_field.f.get((1, 1, 1, 0)).unwrap(), ERROR_DELTA ); // 3
+    }
+
+    #[test]
+    fn test_streamed_field_stream(){
+        let mut input_field = InputField::new(3, 3);
+        input_field.f = Array::range(1., 81.5, 1.).into_shape((3, 3, 3, 3)).unwrap();
+        let mut streaming_weight = StreamingWeight::new(3, 3, 1);
+        let mut streamed_field = StreamedField::new(3, 3, 1);
+        streaming_weight.w0 = streaming_weight.w0 + Array::range(0., 40.2, 0.5).into_shape((3, 3, 3, 3)).unwrap();
+        streaming_weight.w1 = streaming_weight.w1 + Array::range(81., 0.5, -1.).into_shape((3, 3, 3, 3)).unwrap(); // あえて足していることに注意
+        streamed_field.stream(&input_field, &streaming_weight);
+        let f = streamed_field.f;
+        for r in 0..=2 {
+            for c in 0..=2 {
+                for dr in 0..=2 {
+                    for dc in 0..=2 {
+                        if r == 1 && c == 1 { continue; }
+                        assert!( f.get((r, c, dr, dc)).unwrap().is_nan() );
+                    }
+                }
+            }
+        }
+        // println!("{}", f);
+        assert_delta!( *f.get((1, 1, 1, 1)).unwrap(), 1742.0, ERROR_DELTA );
+        assert_delta!( *f.get((1, 1, 0, 2)).unwrap(), 2527.0, ERROR_DELTA );
+        assert_delta!( *f.get((1, 1, 1, 0)).unwrap(), 2126.5, ERROR_DELTA );
     }
 }
