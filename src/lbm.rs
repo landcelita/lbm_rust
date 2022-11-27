@@ -123,6 +123,20 @@ impl StreamingWeight {
         delta.slice_mut(s![margin..row-margin, margin..col-margin, .., ..]).fill(0.0);
         StreamingWeight { row, col, margin, w0, w1, dw0, dw1, delta }
     }
+
+    pub fn update(self: &mut Self) {
+        let margin = self.margin;
+        let row = self.row;
+        let col = self.col;
+        let w0_slice = self.w0.slice_mut(s![margin..row-margin, margin..col-margin, .., ..]);
+        let w1_slice = self.w1.slice_mut(s![margin..row-margin, margin..col-margin, .., ..]);
+        let dw0_slice = self.dw0.slice(s![margin..row-margin, margin..col-margin, .., ..]);
+        let dw1_slice = self.dw1.slice(s![margin..row-margin, margin..col-margin, .., ..]);
+        Zip::from(w0_slice).and(dw0_slice).for_each(|w0, dw0|{ *w0 = *w0 + dw0; });
+        Zip::from(w1_slice).and(dw1_slice).for_each(|w1, dw1|{ *w1 = *w1 + dw1; });
+        self.dw0.slice_mut(s![margin..row-margin, margin..col-margin, .., ..]).fill(0.0);
+        self.dw1.slice_mut(s![margin..row-margin, margin..col-margin, .., ..]).fill(0.0);
+    }
 }
 
 impl StreamedField {
@@ -254,6 +268,28 @@ impl CollidingWeight {
         dw4.slice_mut(s![margin..row-margin, margin..col-margin, .., ..]).fill(0.0);
         delta.slice_mut(s![margin..row-margin, margin..col-margin, .., ..]).fill(0.0);
         CollidingWeight { row, col, margin, w1, w2, w3, w4, dw1, dw2, dw3, dw4, delta }
+    }
+
+    pub fn update(self: &mut Self) {
+        let margin = self.margin;
+        let row = self.row;
+        let col = self.col;
+        let w1_slice = self.w1.slice_mut(s![margin..row-margin, margin..col-margin, .., ..]);
+        let w2_slice = self.w2.slice_mut(s![margin..row-margin, margin..col-margin, .., ..]);
+        let w3_slice = self.w3.slice_mut(s![margin..row-margin, margin..col-margin, .., ..]);
+        let w4_slice = self.w4.slice_mut(s![margin..row-margin, margin..col-margin, .., ..]);
+        let dw1_slice = self.dw1.slice(s![margin..row-margin, margin..col-margin, .., ..]);
+        let dw2_slice = self.dw2.slice(s![margin..row-margin, margin..col-margin, .., ..]);
+        let dw3_slice = self.dw3.slice(s![margin..row-margin, margin..col-margin, .., ..]);
+        let dw4_slice = self.dw4.slice(s![margin..row-margin, margin..col-margin, .., ..]);
+        Zip::from(w1_slice).and(dw1_slice).for_each(|w1, dw1|{ *w1 = *w1 + dw1; });
+        Zip::from(w2_slice).and(dw2_slice).for_each(|w2, dw2|{ *w2 = *w2 + dw2; });
+        Zip::from(w3_slice).and(dw3_slice).for_each(|w3, dw3|{ *w3 = *w3 + dw3; });
+        Zip::from(w4_slice).and(dw4_slice).for_each(|w4, dw4|{ *w4 = *w4 + dw4; });
+        self.dw1.slice_mut(s![margin..row-margin, margin..col-margin, .., ..]).fill(0.0);
+        self.dw2.slice_mut(s![margin..row-margin, margin..col-margin, .., ..]).fill(0.0);
+        self.dw3.slice_mut(s![margin..row-margin, margin..col-margin, .., ..]).fill(0.0);
+        self.dw4.slice_mut(s![margin..row-margin, margin..col-margin, .., ..]).fill(0.0);
     }
 }
 
