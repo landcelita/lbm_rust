@@ -173,15 +173,18 @@ mod tests {
         ... ...
          */
         let mut input_field = InputField::new(2, 2);
-        let u_vert = arr2(&[[0.2, 0.4], [-0.3, -0.2]]);
-        let u_hori = arr2(&[[-0.2, -0.1], [0.2, 0.2]]);
-        let rho = arr2(&[[1.0, 0.8], [0.9, 1.1]]);
-        input_field.set(u_vert, u_hori, rho);
-        assert_delta!( 0.39111111111111111111111, *input_field.f.get((0, 0, 1, 1)).unwrap(), ERROR_DELTA ); // 1
-        assert_delta!( 0.00822222222222222222222, *input_field.f.get((0, 1, 0, 2)).unwrap(), ERROR_DELTA ); // 2
-        assert_delta!( 0.05622222222222222222222, *input_field.f.get((1, 1, 1, 0)).unwrap(), ERROR_DELTA ); // 3
+        for _ in 0..5{
+            let u_vert = arr2(&[[0.2, 0.4], [-0.3, -0.2]]);
+            let u_hori = arr2(&[[-0.2, -0.1], [0.2, 0.2]]);
+            let rho = arr2(&[[1.0, 0.8], [0.9, 1.1]]);
+            input_field.set(u_vert, u_hori, rho);
+            assert_delta!( 0.39111111111111111111111, *input_field.f.get((0, 0, 1, 1)).unwrap(), ERROR_DELTA ); // 1
+            assert_delta!( 0.00822222222222222222222, *input_field.f.get((0, 1, 0, 2)).unwrap(), ERROR_DELTA ); // 2
+            assert_delta!( 0.05622222222222222222222, *input_field.f.get((1, 1, 1, 0)).unwrap(), ERROR_DELTA ); // 3
+        }
     }
 
+    // テストは各メソッドについて、何度か流す(透過性のチェック)
     #[test]
     fn test_streamed_field_stream(){
         let mut input_field = InputField::new(3, 3);
@@ -190,30 +193,32 @@ mod tests {
         let mut streamed_field = StreamedField::new(3, 3, 1);
         streaming_weight.w0 = streaming_weight.w0 + Array::range(0., 40.2, 0.5).into_shape((3, 3, 3, 3)).unwrap();
         streaming_weight.w1 = streaming_weight.w1 + Array::range(81., 0.5, -1.).into_shape((3, 3, 3, 3)).unwrap(); // あえて足していることに注意
-        streamed_field.stream(&input_field, &streaming_weight);
-        // println!("{}", streamed_field.f);
-        // println!("{}", streamed_field.u_vert);
-        // println!("{}", streamed_field.u_hori);
-        // println!("{}", streamed_field.rho);
-        for r in 0..=2 {
-            for c in 0..=2 {
-                if r == 1 && c == 1 { continue; }
-                assert!( streamed_field.u_vert.get((r, c)).unwrap().is_nan() );
-                assert!( streamed_field.u_hori.get((r, c)).unwrap().is_nan() );
-                assert!( streamed_field.rho.get((r, c)).unwrap().is_nan() );
-
-                for dr in 0..=2 {
-                    for dc in 0..=2 {
-                        assert!( streamed_field.f.get((r, c, dr, dc)).unwrap().is_nan() );
+        for _ in 0..5 {
+            streamed_field.stream(&input_field, &streaming_weight);
+            // println!("{}", streamed_field.f);
+            // println!("{}", streamed_field.u_vert);
+            // println!("{}", streamed_field.u_hori);
+            // println!("{}", streamed_field.rho);
+            for r in 0..=2 {
+                for c in 0..=2 {
+                    if r == 1 && c == 1 { continue; }
+                    assert!( streamed_field.u_vert.get((r, c)).unwrap().is_nan() );
+                    assert!( streamed_field.u_hori.get((r, c)).unwrap().is_nan() );
+                    assert!( streamed_field.rho.get((r, c)).unwrap().is_nan() );
+    
+                    for dr in 0..=2 {
+                        for dc in 0..=2 {
+                            assert!( streamed_field.f.get((r, c, dr, dc)).unwrap().is_nan() );
+                        }
                     }
                 }
             }
+            assert_delta!( *streamed_field.f.get((1, 1, 1, 1)).unwrap(), 1742.0, ERROR_DELTA );
+            assert_delta!( *streamed_field.f.get((1, 1, 0, 2)).unwrap(), 2527.0, ERROR_DELTA );
+            assert_delta!( *streamed_field.f.get((1, 1, 1, 0)).unwrap(), 2126.5, ERROR_DELTA );
+            assert_delta!( *streamed_field.rho.get((1, 1)).unwrap(), 16158.0, ERROR_DELTA );
+            assert_delta!( *streamed_field.u_vert.get((1, 1)).unwrap(), -0.41942072038, ERROR_DELTA );
+            assert_delta!( *streamed_field.u_hori.get((1, 1)).unwrap(), -0.13980690679, ERROR_DELTA );
         }
-        assert_delta!( *streamed_field.f.get((1, 1, 1, 1)).unwrap(), 1742.0, ERROR_DELTA );
-        assert_delta!( *streamed_field.f.get((1, 1, 0, 2)).unwrap(), 2527.0, ERROR_DELTA );
-        assert_delta!( *streamed_field.f.get((1, 1, 1, 0)).unwrap(), 2126.5, ERROR_DELTA );
-        assert_delta!( *streamed_field.rho.get((1, 1)).unwrap(), 16158.0, ERROR_DELTA );
-        assert_delta!( *streamed_field.u_vert.get((1, 1)).unwrap(), -0.41942072038, ERROR_DELTA );
-        assert_delta!( *streamed_field.u_hori.get((1, 1)).unwrap(), -0.13980690679, ERROR_DELTA );
     }
 }
