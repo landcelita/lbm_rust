@@ -336,25 +336,28 @@ mod tests {
         colliding_weight.w2 = colliding_weight.w2 + arr2(&[[0.8, 0.7, 0.6], [0.5, 0.4, 0.3], [0.2, 0.1, 0.]]);
         colliding_weight.w3 = colliding_weight.w3 + arr2(&[[0.1, 0.4, 0.7], [0.2, 0.5, 0.8], [0.3, 0.6, 0.9]]);
         colliding_weight.w4 = colliding_weight.w4 + arr2(&[[0.9, 0.6, 0.3], [0.8, 0.5, 0.2], [0.7, 0.4, 0.1]]);
-        collided_field.collide(&streamed_field, &colliding_weight);
-        
-        for r in 0..=2 {
-            for c in 0..=2 {
-                if r == 1 && c == 1 { continue; }
-                // assert!( collided_field.u_vert.get((r, c)).unwrap().is_nan() );
-                // assert!( collided_field.u_hori.get((r, c)).unwrap().is_nan() );
-                // assert!( collided_field.rho.get((r, c)).unwrap().is_nan() );
 
-                for dr in 0..=2 {
-                    for dc in 0..=2 {
-                        assert!( collided_field.feq.get((r, c, dr, dc)).unwrap().is_nan() );
+        for _ in 0..5 {
+            collided_field.collide(&streamed_field, &colliding_weight);
+            
+            for r in 0..=2 {
+                for c in 0..=2 {
+                    if r == 1 && c == 1 { continue; }
+                    // assert!( collided_field.u_vert.get((r, c)).unwrap().is_nan() );
+                    // assert!( collided_field.u_hori.get((r, c)).unwrap().is_nan() );
+                    // assert!( collided_field.rho.get((r, c)).unwrap().is_nan() );
+    
+                    for dr in 0..=2 {
+                        for dc in 0..=2 {
+                            assert!( collided_field.feq.get((r, c, dr, dc)).unwrap().is_nan() );
+                        }
                     }
                 }
             }
+            assert_delta!( *collided_field.feq.get((1, 1, 0, 1)).unwrap(), 1.835555555555555, ERROR_DELTA );
+            assert_delta!( *collided_field.feq.get((1, 1, 1, 1)).unwrap(), 16.760493827160495, ERROR_DELTA );
+            assert_delta!( *collided_field.feq.get((1, 1, 1, 2)).unwrap(), 4.177283950617283, ERROR_DELTA );
+            assert_delta!( *collided_field.feq.get((1, 1, 2, 0)).unwrap(), 3.5576543209876546, ERROR_DELTA );
         }
-        assert_delta!( *collided_field.feq.get((1, 1, 0, 1)).unwrap(), 1.835555555555555, ERROR_DELTA );
-        assert_delta!( *collided_field.feq.get((1, 1, 1, 1)).unwrap(), 16.760493827160495, ERROR_DELTA );
-        assert_delta!( *collided_field.feq.get((1, 1, 1, 2)).unwrap(), 4.177283950617283, ERROR_DELTA );
-        assert_delta!( *collided_field.feq.get((1, 1, 2, 0)).unwrap(), 3.5576543209876546, ERROR_DELTA );
     }
 }
