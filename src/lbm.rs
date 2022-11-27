@@ -1,7 +1,8 @@
-use ndarray::{Array, Array2, Array4, arr2, stack, Axis, Zip, s};
+use ndarray::{Array, Array2, Array4, arr0, arr2, stack, Axis, Zip, s};
 use ndarray_parallel::prelude::*;
 
 // 計算できない値についてはNaNを入れる
+// 外積(v x u)はdr * u_hori - dc * u_vert
 
 // 命名規則(必ず新しい規則はここに書く)
 // 1->2->3の順に書いていく eg. u_hori_nxnx
@@ -11,6 +12,8 @@ use ndarray_parallel::prelude::*;
 // 3. _nx:次の  _nxnx:次の次の  _prev:前の
 // row:行数  col:列数  r:r行(添字)  c:c列(添字) dr, dc
 // C:係数
+
+// TODO: fからu_vert, u_hori, rhoを計算するところは共通化できそう
 
 const C: [[f64; 3]; 3] = [[1.0/36.0, 1.0/9.0, 1.0/36.0], [1.0/9.0, 4.0/9.0, 1.0/9.0], [1.0/36.0, 1.0/9.0, 1.0/36.0]];
 const ERROR_DELTA: f64 = 0.00000000001;
@@ -42,6 +45,28 @@ pub struct StreamedField {
     u_vert: Array2<f64>,
     u_hori: Array2<f64>,
     rho: Array2<f64>,
+}
+
+pub struct CollidingWeight {
+    row: usize,
+    col: usize,
+    margin: usize,
+    w1: Array4<f64>,
+    w2: Array4<f64>,
+    w3: Array4<f64>,
+    w4: Array4<f64>,
+    delta: Array4<f64>,
+}
+
+pub struct CollidedField {
+    row: usize,
+    col: usize,
+    margin: usize,
+    f: Array4<f64>,
+    u_vert: Array2<f64>,
+    u_hori: Array2<f64>,
+    rho: Array2<f64>,
+    feq: Array4<f64>,
 }
 
 impl InputField {
@@ -150,6 +175,82 @@ impl StreamedField {
     }
 }
 
+impl CollidingWeight {
+    pub fn new(row: usize, col: usize, margin: usize) -> CollidingWeight {
+        let mut w1 = Array4::<f64>::from_elem((row, col, 3, 3), f64::NAN);
+        let mut w2 = Array4::<f64>::from_elem((row, col, 3, 3), f64::NAN);
+        let mut w3 = Array4::<f64>::from_elem((row, col, 3, 3), f64::NAN);
+        let mut w4 = Array4::<f64>::from_elem((row, col, 3, 3), f64::NAN);
+        let mut delta = Array4::<f64>::from_elem((row, col, 3, 3), f64::NAN);
+        w1.slice_mut(s![margin..row-margin, margin..col-margin, .., ..]).fill(3.0);
+        w2.slice_mut(s![margin..row-margin, margin..col-margin, .., ..]).fill(0.0);
+        w3.slice_mut(s![margin..row-margin, margin..col-margin, .., ..]).fill(4.5);
+        w4.slice_mut(s![margin..row-margin, margin..col-margin, .., ..]).fill(-1.5);
+        delta.slice_mut(s![margin..row-margin, margin..col-margin, .., ..]).fill(0.0);
+        CollidingWeight { row, col, margin, w1, w2, w3, w4, delta }
+    }
+}
+
+impl CollidedField {
+    pub fn new(row: usize, col: usize, margin: usize) -> CollidedField {
+        let mut f = Array4::<f64>::from_elem((row, col, 3, 3), f64::NAN);
+        let mut u_vert = Array2::<f64>::from_elem((row, col), f64::NAN);
+        let mut u_hori = Array2::<f64>::from_elem((row, col), f64::NAN);
+        let mut rho = Array2::<f64>::from_elem((row, col), f64::NAN);
+        let mut feq = Array4::<f64>::from_elem((row, col, 3, 3), f64::NAN);
+        f.slice_mut(s![margin..row-margin, margin..col-margin, .., ..]).fill(0.0);
+        u_vert.slice_mut(s![margin..row-margin, margin..col-margin]).fill(0.0);
+        u_hori.slice_mut(s![margin..row-margin, margin..col-margin]).fill(0.0);
+        rho.slice_mut(s![margin..row-margin, margin..col-margin]).fill(0.0);
+        feq.slice_mut(s![margin..row-margin, margin..col-margin, .., ..]).fill(0.0);
+        CollidedField { row, col, margin, f, u_vert, u_hori, rho, feq }
+    }
+
+    pub fn collide(self: &mut Self, streamed_field: &StreamedField, colliding_weight: &CollidingWeight) {
+        if [self.row, self.col] != [streamed_field.row, streamed_field.col] || [self.row, self.col] != [colliding_weight.row, colliding_weight.col] {
+            panic!("panicked at line {} in {}", line!(), file!());
+        }
+        if self.margin != streamed_field.margin || self.margin != colliding_weight.margin {
+            panic!("panicked at line {} in {}", line!(), file!());
+        }
+        let margin = self.margin as i32;
+        let row = self.row as i32;
+        let col = self.col as i32;
+        self.u_vert.slice_mut(s![margin..row-margin, margin..col-margin]).fill(0.0);
+        self.u_hori.slice_mut(s![margin..row-margin, margin..col-margin]).fill(0.0);
+        self.rho.slice_mut(s![margin..row-margin, margin..col-margin]).fill(0.0);
+        self.feq.slice_mut(s![margin..row-margin, margin..col-margin, .., ..]).fill(1.0); // zip from and and ...が6つまでしか繋いでくれないのでちょっと工夫
+
+        for dr in -1..=1_i32 { 
+            for dc in -1..=1_i32 {
+                let mut feq_slice = self.feq.slice_mut(s![margin..row-margin, margin..col-margin, dr+1, dc+1]);
+                let u_vert_prev_slice = streamed_field.u_vert.slice(s![margin..row-margin, margin..col-margin]);
+                let u_hori_prev_slice = streamed_field.u_hori.slice(s![margin..row-margin, margin..col-margin]);
+                let rho_prev_slice = streamed_field.rho.slice(s![margin..row-margin, margin..col-margin]);
+                let w1_slice = colliding_weight.w1.slice(s![margin..row-margin, margin..col-margin, dr+1, dc+1]);
+                let w2_slice = colliding_weight.w2.slice(s![margin..row-margin, margin..col-margin, dr+1, dc+1]);
+                let w3_slice = colliding_weight.w3.slice(s![margin..row-margin, margin..col-margin, dr+1, dc+1]);
+                let w4_slice = colliding_weight.w4.slice(s![margin..row-margin, margin..col-margin, dr+1, dc+1]);
+                Zip::from(feq_slice.view_mut()).and(u_vert_prev_slice).and(u_hori_prev_slice).and(w1_slice).and(w3_slice).for_each(|feq, u_vert_prev, u_hori_prev, w1, w3|{
+                    let u_prod = u_vert_prev * dr as f64 + u_hori_prev * dc as f64;
+                    *feq += (w3 * u_prod + w1) * u_prod;
+                });
+                Zip::from(feq_slice.view_mut()).and(u_vert_prev_slice).and(u_hori_prev_slice).and(w2_slice).for_each(|feq, u_vert_prev, u_hori_prev, w2|{
+                    *feq += w2 * (dr as f64 * u_hori_prev - dc as f64 * u_vert_prev);
+                });
+                Zip::from(feq_slice.view_mut()).and(u_vert_prev_slice).and(u_hori_prev_slice).and(w4_slice).for_each(|feq, u_vert_prev, u_hori_prev, w4|{
+                    let u2 = u_vert_prev * u_vert_prev + u_hori_prev * u_hori_prev;
+                    *feq += w4 * u2;
+                });
+                Zip::from(feq_slice.view_mut()).and(rho_prev_slice).for_each(|feq, rho_prev|{
+                    *feq *= C[(dr+1) as usize][(dc+1) as usize] * rho_prev;
+                });
+            }
+        }
+        // TODO: f, u_vert, u_hori, rho
+    }
+}
+
 macro_rules! assert_delta {
     ($x:expr, $y:expr, $d:expr) => {
         if !($x - $y < $d && $y - $x < $d) { panic!("left: {}, right: {}", $x, $y); }
@@ -220,5 +321,40 @@ mod tests {
             assert_delta!( *streamed_field.u_vert.get((1, 1)).unwrap(), -0.41942072038, ERROR_DELTA );
             assert_delta!( *streamed_field.u_hori.get((1, 1)).unwrap(), -0.13980690679, ERROR_DELTA );
         }
+    }
+
+    #[test]
+    fn test_collided_field_collide() {
+        let mut collided_field = CollidedField::new(3, 3, 1);
+        let mut colliding_weight = CollidingWeight::new(3, 3, 1);
+        let mut streamed_field = StreamedField::new(3, 3, 1);
+        streamed_field.f.slice_mut(s![1, 1, .., ..]).assign(&arr2(&[[1., 2., 3.], [6., 5., 4.], [7., 8., 9.]]));
+        streamed_field.u_vert.slice_mut(s![1, 1]).assign(&arr0(0.4));
+        streamed_field.u_hori.slice_mut(s![1, 1]).assign(&arr0(0.0444444444444444444));
+        streamed_field.rho.slice_mut(s![1, 1]).assign(&arr0(45.));
+        colliding_weight.w1 = colliding_weight.w1 + arr2(&[[0., 0.1, 0.2], [0.3, 0.4, 0.5], [0.6, 0.7, 0.8]]); // Nan + ... = Nan を利用
+        colliding_weight.w2 = colliding_weight.w2 + arr2(&[[0.8, 0.7, 0.6], [0.5, 0.4, 0.3], [0.2, 0.1, 0.]]);
+        colliding_weight.w3 = colliding_weight.w3 + arr2(&[[0.1, 0.4, 0.7], [0.2, 0.5, 0.8], [0.3, 0.6, 0.9]]);
+        colliding_weight.w4 = colliding_weight.w4 + arr2(&[[0.9, 0.6, 0.3], [0.8, 0.5, 0.2], [0.7, 0.4, 0.1]]);
+        collided_field.collide(&streamed_field, &colliding_weight);
+        
+        for r in 0..=2 {
+            for c in 0..=2 {
+                if r == 1 && c == 1 { continue; }
+                // assert!( collided_field.u_vert.get((r, c)).unwrap().is_nan() );
+                // assert!( collided_field.u_hori.get((r, c)).unwrap().is_nan() );
+                // assert!( collided_field.rho.get((r, c)).unwrap().is_nan() );
+
+                for dr in 0..=2 {
+                    for dc in 0..=2 {
+                        assert!( collided_field.feq.get((r, c, dr, dc)).unwrap().is_nan() );
+                    }
+                }
+            }
+        }
+        assert_delta!( *collided_field.feq.get((1, 1, 0, 1)).unwrap(), 1.835555555555555, ERROR_DELTA );
+        assert_delta!( *collided_field.feq.get((1, 1, 1, 1)).unwrap(), 16.760493827160495, ERROR_DELTA );
+        assert_delta!( *collided_field.feq.get((1, 1, 1, 2)).unwrap(), 4.177283950617283, ERROR_DELTA );
+        assert_delta!( *collided_field.feq.get((1, 1, 2, 0)).unwrap(), 3.5576543209876546, ERROR_DELTA );
     }
 }
