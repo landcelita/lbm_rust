@@ -34,6 +34,8 @@ pub struct StreamingWeight {
     margin: usize,
     w0: Array4<f64>,
     w1: Array4<f64>,
+    dw0: Array4<f64>,
+    dw1: Array4<f64>,
     delta: Array4<f64>,
 }
 
@@ -55,6 +57,10 @@ pub struct CollidingWeight {
     w2: Array4<f64>,
     w3: Array4<f64>,
     w4: Array4<f64>,
+    dw1: Array4<f64>,
+    dw2: Array4<f64>,
+    dw3: Array4<f64>,
+    dw4: Array4<f64>,
     delta: Array4<f64>,
 }
 
@@ -106,11 +112,15 @@ impl StreamingWeight {
     pub fn new(row: usize, col: usize, margin: usize) -> StreamingWeight {
         let mut w0 = Array4::<f64>::from_elem((row, col, 3, 3), f64::NAN);
         let mut w1 = Array4::<f64>::from_elem((row, col, 3, 3), f64::NAN);
+        let mut dw0 = Array4::<f64>::from_elem((row, col, 3, 3), f64::NAN);
+        let mut dw1 = Array4::<f64>::from_elem((row, col, 3, 3), f64::NAN);
         let mut delta = Array4::<f64>::from_elem((row, col, 3, 3), f64::NAN);
         w0.slice_mut(s![margin..row-margin, margin..col-margin, .., ..]).fill(0.0);
         w1.slice_mut(s![margin..row-margin, margin..col-margin, .., ..]).fill(1.0);
+        dw0.slice_mut(s![margin..row-margin, margin..col-margin, .., ..]).fill(0.0);
+        dw1.slice_mut(s![margin..row-margin, margin..col-margin, .., ..]).fill(0.0);
         delta.slice_mut(s![margin..row-margin, margin..col-margin, .., ..]).fill(0.0);
-        StreamingWeight { row, col, margin, w0, w1, delta }
+        StreamingWeight { row, col, margin, w0, w1, dw0, dw1, delta }
     }
 }
 
@@ -181,13 +191,21 @@ impl CollidingWeight {
         let mut w2 = Array4::<f64>::from_elem((row, col, 3, 3), f64::NAN);
         let mut w3 = Array4::<f64>::from_elem((row, col, 3, 3), f64::NAN);
         let mut w4 = Array4::<f64>::from_elem((row, col, 3, 3), f64::NAN);
+        let mut dw1 = Array4::<f64>::from_elem((row, col, 3, 3), f64::NAN);
+        let mut dw2 = Array4::<f64>::from_elem((row, col, 3, 3), f64::NAN);
+        let mut dw3 = Array4::<f64>::from_elem((row, col, 3, 3), f64::NAN);
+        let mut dw4 = Array4::<f64>::from_elem((row, col, 3, 3), f64::NAN);
         let mut delta = Array4::<f64>::from_elem((row, col, 3, 3), f64::NAN);
         w1.slice_mut(s![margin..row-margin, margin..col-margin, .., ..]).fill(3.0);
         w2.slice_mut(s![margin..row-margin, margin..col-margin, .., ..]).fill(0.0);
         w3.slice_mut(s![margin..row-margin, margin..col-margin, .., ..]).fill(4.5);
         w4.slice_mut(s![margin..row-margin, margin..col-margin, .., ..]).fill(-1.5);
+        dw1.slice_mut(s![margin..row-margin, margin..col-margin, .., ..]).fill(0.0);
+        dw2.slice_mut(s![margin..row-margin, margin..col-margin, .., ..]).fill(0.0);
+        dw3.slice_mut(s![margin..row-margin, margin..col-margin, .., ..]).fill(0.0);
+        dw4.slice_mut(s![margin..row-margin, margin..col-margin, .., ..]).fill(0.0);
         delta.slice_mut(s![margin..row-margin, margin..col-margin, .., ..]).fill(0.0);
-        CollidingWeight { row, col, margin, w1, w2, w3, w4, delta }
+        CollidingWeight { row, col, margin, w1, w2, w3, w4, dw1, dw2, dw3, dw4, delta }
     }
 }
 
