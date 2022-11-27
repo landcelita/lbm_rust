@@ -63,9 +63,9 @@ pub struct CollidedField {
     col: usize,
     margin: usize,
     f: Array4<f64>,
-    u_vert: Array2<f64>,
-    u_hori: Array2<f64>,
-    rho: Array2<f64>,
+    // u_vert: Array2<f64>, // 多分必要ないので今のところコメントアウトしておく
+    // u_hori: Array2<f64>,
+    // rho: Array2<f64>,
     feq: Array4<f64>,
 }
 
@@ -194,16 +194,10 @@ impl CollidingWeight {
 impl CollidedField {
     pub fn new(row: usize, col: usize, margin: usize) -> CollidedField {
         let mut f = Array4::<f64>::from_elem((row, col, 3, 3), f64::NAN);
-        let mut u_vert = Array2::<f64>::from_elem((row, col), f64::NAN);
-        let mut u_hori = Array2::<f64>::from_elem((row, col), f64::NAN);
-        let mut rho = Array2::<f64>::from_elem((row, col), f64::NAN);
         let mut feq = Array4::<f64>::from_elem((row, col, 3, 3), f64::NAN);
         f.slice_mut(s![margin..row-margin, margin..col-margin, .., ..]).fill(0.0);
-        u_vert.slice_mut(s![margin..row-margin, margin..col-margin]).fill(0.0);
-        u_hori.slice_mut(s![margin..row-margin, margin..col-margin]).fill(0.0);
-        rho.slice_mut(s![margin..row-margin, margin..col-margin]).fill(0.0);
         feq.slice_mut(s![margin..row-margin, margin..col-margin, .., ..]).fill(0.0);
-        CollidedField { row, col, margin, f, u_vert, u_hori, rho, feq }
+        CollidedField { row, col, margin, f, feq }
     }
 
     pub fn collide(self: &mut Self, streamed_field: &StreamedField, colliding_weight: &CollidingWeight) {
@@ -216,9 +210,6 @@ impl CollidedField {
         let margin = self.margin as i32;
         let row = self.row as i32;
         let col = self.col as i32;
-        self.u_vert.slice_mut(s![margin..row-margin, margin..col-margin]).fill(0.0);
-        self.u_hori.slice_mut(s![margin..row-margin, margin..col-margin]).fill(0.0);
-        self.rho.slice_mut(s![margin..row-margin, margin..col-margin]).fill(0.0);
         self.feq.slice_mut(s![margin..row-margin, margin..col-margin, .., ..]).fill(1.0); // zip from and and ...が6つまでしか繋いでくれないのでちょっと工夫
 
         for dr in -1..=1_i32 { 
@@ -247,7 +238,8 @@ impl CollidedField {
                 });
             }
         }
-        // TODO: f, u_vert, u_hori, rho
+        // TODO: f
+
     }
 }
 
