@@ -79,23 +79,36 @@ impl InputField {
 
 impl StreamingWeight {
     pub fn new(row: usize, col: usize, margin: usize) -> StreamingWeight {
-        let w0 = Array4::<f64>::zeros((row, col, 3, 3));
-        let w1 = Array4::<f64>::from_elem((row, col, 3, 3), 1.0);
-        let delta = Array4::<f64>::zeros((row, col, 3, 3));
+        let mut w0 = Array4::<f64>::from_elem((row, col, 3, 3), f64::NAN);
+        let mut w1 = Array4::<f64>::from_elem((row, col, 3, 3), f64::NAN);
+        let mut delta = Array4::<f64>::from_elem((row, col, 3, 3), f64::NAN);
+        w0.slice_mut(s![margin..row-margin, margin..col-margin, .., ..]).fill(0.0);
+        w1.slice_mut(s![margin..row-margin, margin..col-margin, .., ..]).fill(1.0);
+        delta.slice_mut(s![margin..row-margin, margin..col-margin, .., ..]).fill(0.0);
         StreamingWeight { row, col, margin, w0, w1, delta }
     }
 }
 
 impl StreamedField {
     pub fn new(row: usize, col: usize, margin: usize) -> StreamedField {
-        let f = Array4::<f64>::from_elem((row, col, 3, 3), f64::NAN);
-        let u_vert = Array2::<f64>::from_elem((row, col), f64::NAN);
-        let u_hori = Array2::<f64>::from_elem((row, col), f64::NAN);
-        let rho = Array2::<f64>::from_elem((row, col), f64::NAN);
+        let mut f = Array4::<f64>::from_elem((row, col, 3, 3), f64::NAN);
+        let mut u_vert = Array2::<f64>::from_elem((row, col), f64::NAN);
+        let mut u_hori = Array2::<f64>::from_elem((row, col), f64::NAN);
+        let mut rho = Array2::<f64>::from_elem((row, col), f64::NAN);
+        f.slice_mut(s![margin..row-margin, margin..col-margin, .., ..]).fill(0.0);
+        u_vert.slice_mut(s![margin..row-margin, margin..col-margin]).fill(0.0);
+        u_hori.slice_mut(s![margin..row-margin, margin..col-margin]).fill(0.0);
+        rho.slice_mut(s![margin..row-margin, margin..col-margin]).fill(0.0);
         StreamedField { row, col, margin, f, u_vert, u_hori, rho }
     }
 
     pub fn stream(self: &mut Self, input_field: &InputField, streaming_weight: &StreamingWeight) {
+        if [self.row, self.col] != [input_field.row, input_field.col] || [self.row, self.col] != [streaming_weight.row, streaming_weight.col] {
+            panic!("panicked at line {} in {}", line!(), file!());
+        }
+        if self.margin != streaming_weight.margin {
+            panic!("panicked at line {} in {}", line!(), file!());
+        }
         let margin = self.margin as i32;
         let row = self.row as i32;
         let col = self.col as i32;
