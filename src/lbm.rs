@@ -238,8 +238,13 @@ impl CollidedField {
                 });
             }
         }
-        // TODO: f
-
+        
+        let mut f_slice = self.f.slice_mut(s![margin..row-margin, margin..col-margin, .., ..]);
+        let feq_slice = self.feq.slice(s![margin..row-margin, margin..col-margin, .., ..]);
+        let f_prev_slice = streamed_field.f.slice(s![margin..row-margin, margin..col-margin, .., ..]);
+        Zip::from(f_slice).and(feq_slice).and(f_prev_slice).for_each(|f, feq, f_prev| {
+            *f = (feq + f_prev) / 2.0;
+        });
     }
 }
 
@@ -350,6 +355,10 @@ mod tests {
             assert_delta!( *collided_field.feq.get((1, 1, 1, 1)).unwrap(), 16.760493827160495, ERROR_DELTA );
             assert_delta!( *collided_field.feq.get((1, 1, 1, 2)).unwrap(), 4.177283950617283, ERROR_DELTA );
             assert_delta!( *collided_field.feq.get((1, 1, 2, 0)).unwrap(), 3.5576543209876546, ERROR_DELTA );
+            assert_delta!( *collided_field.f.get((1, 1, 0, 1)).unwrap(), 3.835555555555555 / 2.0, ERROR_DELTA );
+            assert_delta!( *collided_field.f.get((1, 1, 1, 1)).unwrap(), 21.760493827160495 / 2.0, ERROR_DELTA );
+            assert_delta!( *collided_field.f.get((1, 1, 1, 2)).unwrap(), 8.177283950617283 / 2.0, ERROR_DELTA );
+            assert_delta!( *collided_field.f.get((1, 1, 2, 0)).unwrap(), 10.5576543209876546 / 2.0, ERROR_DELTA );
         }
     }
 }
