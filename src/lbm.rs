@@ -153,9 +153,9 @@ impl StreamedField {
                     });
                 
                 let f_slice = self.f.slice(s![margin..row-margin, margin..col-margin, dr+1, dc+1]);
-                let mut u_vert_slice = self.u_vert.slice_mut(s![margin..row-margin, margin..col-margin]);
-                let mut u_hori_slice = self.u_hori.slice_mut(s![margin..row-margin, margin..col-margin]);
-                let mut rho_slice = self.rho.slice_mut(s![margin..row-margin, margin..col-margin]);
+                let u_vert_slice = self.u_vert.slice_mut(s![margin..row-margin, margin..col-margin]);
+                let u_hori_slice = self.u_hori.slice_mut(s![margin..row-margin, margin..col-margin]);
+                let rho_slice = self.rho.slice_mut(s![margin..row-margin, margin..col-margin]);
                 Zip::from(f_slice).and(u_vert_slice).and(u_hori_slice).and(rho_slice)
                     .for_each(|f, u_vert, u_hori, rho|{
                         *u_vert += f * dr as f64;
@@ -165,8 +165,8 @@ impl StreamedField {
             }
         }
 
-        let mut u_vert_slice = self.u_vert.slice_mut(s![margin..row-margin, margin..col-margin]);
-        let mut u_hori_slice = self.u_hori.slice_mut(s![margin..row-margin, margin..col-margin]);
+        let u_vert_slice = self.u_vert.slice_mut(s![margin..row-margin, margin..col-margin]);
+        let u_hori_slice = self.u_hori.slice_mut(s![margin..row-margin, margin..col-margin]);
         let rho_slice = self.rho.slice(s![margin..row-margin, margin..col-margin]);
         Zip::from(u_vert_slice).and(u_hori_slice).and(rho_slice).for_each(|u_vert, u_hori, rho| {
             *u_vert /= rho;
@@ -239,7 +239,7 @@ impl CollidedField {
             }
         }
         
-        let mut f_slice = self.f.slice_mut(s![margin..row-margin, margin..col-margin, .., ..]);
+        let f_slice = self.f.slice_mut(s![margin..row-margin, margin..col-margin, .., ..]);
         let feq_slice = self.feq.slice(s![margin..row-margin, margin..col-margin, .., ..]);
         let f_prev_slice = streamed_field.f.slice(s![margin..row-margin, margin..col-margin, .., ..]);
         Zip::from(f_slice).and(feq_slice).and(f_prev_slice).for_each(|f, feq, f_prev| {
