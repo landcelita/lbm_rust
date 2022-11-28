@@ -95,15 +95,15 @@ impl InputField {
 
         for dr in -1..=1_i32 { 
             for dc in -1..=1_i32 {
-                let f_slice = self.f.slice_mut(s![.., .., dr+1, dc+1]);
-                Zip::from(f_slice).and(&self.u_vert).and(&self.u_hori).and(&self.rho)
+                let mut f_slice = self.f.slice_mut(s![.., .., dr+1, dc+1]);
+                Zip::from(&mut f_slice).and(&self.u_vert).and(&self.u_hori).and(&self.rho)
                     .for_each(|f, u_vert, u_hori, rho| {
                         let dr_f = dr as f64; // -1., 0., 1.のいずれかに変換
                         let dc_f = dc as f64;
                         let u2 = u_vert * u_vert + u_hori * u_hori; // ここちょっと無駄な気もする
                         let u_prod = u_vert * dr_f + u_hori * dc_f;
                         *f = C[(dr+1) as usize][(dc+1) as usize] * rho * (1.0 + (3.0 + 4.5 * u_prod) * u_prod - 1.5 * u2);
-                    })
+                    });
             }
         }
     }
@@ -128,12 +128,12 @@ impl StreamingWeight {
         let margin = self.margin;
         let row = self.row;
         let col = self.col;
-        let w0_slice = self.w0.slice_mut(s![margin..row-margin, margin..col-margin, .., ..]);
-        let w1_slice = self.w1.slice_mut(s![margin..row-margin, margin..col-margin, .., ..]);
+        let mut w0_slice = self.w0.slice_mut(s![margin..row-margin, margin..col-margin, .., ..]);
+        let mut w1_slice = self.w1.slice_mut(s![margin..row-margin, margin..col-margin, .., ..]);
         let dw0_slice = self.dw0.slice(s![margin..row-margin, margin..col-margin, .., ..]);
         let dw1_slice = self.dw1.slice(s![margin..row-margin, margin..col-margin, .., ..]);
-        Zip::from(w0_slice).and(dw0_slice).for_each(|w0, dw0|{ *w0 = *w0 + dw0; });
-        Zip::from(w1_slice).and(dw1_slice).for_each(|w1, dw1|{ *w1 = *w1 + dw1; });
+        Zip::from(&mut w0_slice).and(&dw0_slice).for_each(|w0, dw0|{ *w0 = *w0 + dw0; });
+        Zip::from(&mut w1_slice).and(&dw1_slice).for_each(|w1, dw1|{ *w1 = *w1 + dw1; });
         self.dw0.slice_mut(s![margin..row-margin, margin..col-margin, .., ..]).fill(0.0);
         self.dw1.slice_mut(s![margin..row-margin, margin..col-margin, .., ..]).fill(0.0);
     }
@@ -168,20 +168,20 @@ impl StreamedField {
 
         for dr in -1..=1_i32 {
             for dc in -1..=1_i32 {
-                let f_slice = self.f.slice_mut(s![margin..row-margin, margin..col-margin, dr+1, dc+1]);
+                let mut f_slice = self.f.slice_mut(s![margin..row-margin, margin..col-margin, dr+1, dc+1]);
                 let w0_slice = streaming_weight.w0.slice(s![margin..row-margin, margin..col-margin, dr+1, dc+1]);
                 let w1_slice = streaming_weight.w1.slice(s![margin..row-margin, margin..col-margin, dr+1, dc+1]);
                 let f_prev_slice = input_field.f.slice(s![margin-dr..row-dr-margin, margin-dc..col-dc-margin, dr+1, dc+1]);
-                Zip::from(f_slice).and(w0_slice).and(w1_slice).and(f_prev_slice)
+                Zip::from(&mut f_slice).and(&w0_slice).and(&w1_slice).and(&f_prev_slice)
                     .for_each(|f, w0, w1, f_prev| {
                         *f = w0 + w1 * f_prev;
                     });
                 
                 let f_slice = self.f.slice(s![margin..row-margin, margin..col-margin, dr+1, dc+1]);
-                let u_vert_slice = self.u_vert.slice_mut(s![margin..row-margin, margin..col-margin]);
-                let u_hori_slice = self.u_hori.slice_mut(s![margin..row-margin, margin..col-margin]);
-                let rho_slice = self.rho.slice_mut(s![margin..row-margin, margin..col-margin]);
-                Zip::from(f_slice).and(u_vert_slice).and(u_hori_slice).and(rho_slice)
+                let mut u_vert_slice = self.u_vert.slice_mut(s![margin..row-margin, margin..col-margin]);
+                let mut u_hori_slice = self.u_hori.slice_mut(s![margin..row-margin, margin..col-margin]);
+                let mut rho_slice = self.rho.slice_mut(s![margin..row-margin, margin..col-margin]);
+                Zip::from(&f_slice).and(&mut u_vert_slice).and(&mut u_hori_slice).and(&mut rho_slice)
                     .for_each(|f, u_vert, u_hori, rho|{
                         *u_vert += f * dr as f64;
                         *u_hori += f * dc as f64;
@@ -190,10 +190,10 @@ impl StreamedField {
             }
         }
 
-        let u_vert_slice = self.u_vert.slice_mut(s![margin..row-margin, margin..col-margin]);
-        let u_hori_slice = self.u_hori.slice_mut(s![margin..row-margin, margin..col-margin]);
+        let mut u_vert_slice = self.u_vert.slice_mut(s![margin..row-margin, margin..col-margin]);
+        let mut u_hori_slice = self.u_hori.slice_mut(s![margin..row-margin, margin..col-margin]);
         let rho_slice = self.rho.slice(s![margin..row-margin, margin..col-margin]);
-        Zip::from(u_vert_slice).and(u_hori_slice).and(rho_slice).for_each(|u_vert, u_hori, rho| {
+        Zip::from(&mut u_vert_slice).and(&mut u_hori_slice).and(&rho_slice).for_each(|u_vert, u_hori, rho| {
             *u_vert /= rho;
             *u_hori /= rho;
         });
@@ -215,20 +215,20 @@ impl StreamedField {
 
         for dr in -1..=1_i32 {
             for dc in -1..=1_i32 {
-                let f_slice = self.f.slice_mut(s![margin..row-margin, margin..col-margin, dr+1, dc+1]);
+                let mut f_slice = self.f.slice_mut(s![margin..row-margin, margin..col-margin, dr+1, dc+1]);
                 let w0_slice = streaming_weight.w0.slice(s![margin..row-margin, margin..col-margin, dr+1, dc+1]);
                 let w1_slice = streaming_weight.w1.slice(s![margin..row-margin, margin..col-margin, dr+1, dc+1]);
                 let f_prev_slice = collided_field.f.slice(s![margin-dr..row-dr-margin, margin-dc..col-dc-margin, dr+1, dc+1]);
-                Zip::from(f_slice).and(w0_slice).and(w1_slice).and(f_prev_slice)
+                Zip::from(&mut f_slice).and(&w0_slice).and(&w1_slice).and(&f_prev_slice)
                     .for_each(|f, w0, w1, f_prev| {
                         *f = w0 + w1 * f_prev;
                     });
                 
                 let f_slice = self.f.slice(s![margin..row-margin, margin..col-margin, dr+1, dc+1]);
-                let u_vert_slice = self.u_vert.slice_mut(s![margin..row-margin, margin..col-margin]);
-                let u_hori_slice = self.u_hori.slice_mut(s![margin..row-margin, margin..col-margin]);
-                let rho_slice = self.rho.slice_mut(s![margin..row-margin, margin..col-margin]);
-                Zip::from(f_slice).and(u_vert_slice).and(u_hori_slice).and(rho_slice)
+                let mut u_vert_slice = self.u_vert.slice_mut(s![margin..row-margin, margin..col-margin]);
+                let mut u_hori_slice = self.u_hori.slice_mut(s![margin..row-margin, margin..col-margin]);
+                let mut rho_slice = self.rho.slice_mut(s![margin..row-margin, margin..col-margin]);
+                Zip::from(&f_slice).and(&mut u_vert_slice).and(&mut u_hori_slice).and(&mut rho_slice)
                     .for_each(|f, u_vert, u_hori, rho|{
                         *u_vert += f * dr as f64;
                         *u_hori += f * dc as f64;
@@ -237,10 +237,10 @@ impl StreamedField {
             }
         }
 
-        let u_vert_slice = self.u_vert.slice_mut(s![margin..row-margin, margin..col-margin]);
-        let u_hori_slice = self.u_hori.slice_mut(s![margin..row-margin, margin..col-margin]);
+        let mut u_vert_slice = self.u_vert.slice_mut(s![margin..row-margin, margin..col-margin]);
+        let mut u_hori_slice = self.u_hori.slice_mut(s![margin..row-margin, margin..col-margin]);
         let rho_slice = self.rho.slice(s![margin..row-margin, margin..col-margin]);
-        Zip::from(u_vert_slice).and(u_hori_slice).and(rho_slice).for_each(|u_vert, u_hori, rho| {
+        Zip::from(&mut u_vert_slice).and(&mut u_hori_slice).and(&rho_slice).for_each(|u_vert, u_hori, rho| {
             *u_vert /= rho;
             *u_hori /= rho;
         });
@@ -274,18 +274,18 @@ impl CollidingWeight {
         let margin = self.margin;
         let row = self.row;
         let col = self.col;
-        let w1_slice = self.w1.slice_mut(s![margin..row-margin, margin..col-margin, .., ..]);
-        let w2_slice = self.w2.slice_mut(s![margin..row-margin, margin..col-margin, .., ..]);
-        let w3_slice = self.w3.slice_mut(s![margin..row-margin, margin..col-margin, .., ..]);
-        let w4_slice = self.w4.slice_mut(s![margin..row-margin, margin..col-margin, .., ..]);
+        let mut w1_slice = self.w1.slice_mut(s![margin..row-margin, margin..col-margin, .., ..]);
+        let mut w2_slice = self.w2.slice_mut(s![margin..row-margin, margin..col-margin, .., ..]);
+        let mut w3_slice = self.w3.slice_mut(s![margin..row-margin, margin..col-margin, .., ..]);
+        let mut w4_slice = self.w4.slice_mut(s![margin..row-margin, margin..col-margin, .., ..]);
         let dw1_slice = self.dw1.slice(s![margin..row-margin, margin..col-margin, .., ..]);
         let dw2_slice = self.dw2.slice(s![margin..row-margin, margin..col-margin, .., ..]);
         let dw3_slice = self.dw3.slice(s![margin..row-margin, margin..col-margin, .., ..]);
         let dw4_slice = self.dw4.slice(s![margin..row-margin, margin..col-margin, .., ..]);
-        Zip::from(w1_slice).and(dw1_slice).for_each(|w1, dw1|{ *w1 = *w1 + dw1; });
-        Zip::from(w2_slice).and(dw2_slice).for_each(|w2, dw2|{ *w2 = *w2 + dw2; });
-        Zip::from(w3_slice).and(dw3_slice).for_each(|w3, dw3|{ *w3 = *w3 + dw3; });
-        Zip::from(w4_slice).and(dw4_slice).for_each(|w4, dw4|{ *w4 = *w4 + dw4; });
+        Zip::from(&mut w1_slice).and(&dw1_slice).for_each(|w1, dw1|{ *w1 = *w1 + dw1; });
+        Zip::from(&mut w2_slice).and(&dw2_slice).for_each(|w2, dw2|{ *w2 = *w2 + dw2; });
+        Zip::from(&mut w3_slice).and(&dw3_slice).for_each(|w3, dw3|{ *w3 = *w3 + dw3; });
+        Zip::from(&mut w4_slice).and(&dw4_slice).for_each(|w4, dw4|{ *w4 = *w4 + dw4; });
         self.dw1.slice_mut(s![margin..row-margin, margin..col-margin, .., ..]).fill(0.0);
         self.dw2.slice_mut(s![margin..row-margin, margin..col-margin, .., ..]).fill(0.0);
         self.dw3.slice_mut(s![margin..row-margin, margin..col-margin, .., ..]).fill(0.0);
@@ -324,27 +324,27 @@ impl CollidedField {
                 let w2_slice = colliding_weight.w2.slice(s![margin..row-margin, margin..col-margin, dr+1, dc+1]);
                 let w3_slice = colliding_weight.w3.slice(s![margin..row-margin, margin..col-margin, dr+1, dc+1]);
                 let w4_slice = colliding_weight.w4.slice(s![margin..row-margin, margin..col-margin, dr+1, dc+1]);
-                Zip::from(feq_slice.view_mut()).and(u_vert_prev_slice).and(u_hori_prev_slice).and(w1_slice).and(w3_slice).for_each(|feq, u_vert_prev, u_hori_prev, w1, w3|{
+                Zip::from(&mut feq_slice).and(&u_vert_prev_slice).and(&u_hori_prev_slice).and(&w1_slice).and(&w3_slice).for_each(|feq, u_vert_prev, u_hori_prev, w1, w3|{
                     let u_prod = u_vert_prev * dr as f64 + u_hori_prev * dc as f64;
                     *feq += (w3 * u_prod + w1) * u_prod;
                 });
-                Zip::from(feq_slice.view_mut()).and(u_vert_prev_slice).and(u_hori_prev_slice).and(w2_slice).for_each(|feq, u_vert_prev, u_hori_prev, w2|{
+                Zip::from(&mut feq_slice).and(&u_vert_prev_slice).and(&u_hori_prev_slice).and(&w2_slice).for_each(|feq, u_vert_prev, u_hori_prev, w2|{
                     *feq += w2 * (dr as f64 * u_hori_prev - dc as f64 * u_vert_prev);
                 });
-                Zip::from(feq_slice.view_mut()).and(u_vert_prev_slice).and(u_hori_prev_slice).and(w4_slice).for_each(|feq, u_vert_prev, u_hori_prev, w4|{
+                Zip::from(&mut feq_slice).and(&u_vert_prev_slice).and(&u_hori_prev_slice).and(&w4_slice).for_each(|feq, u_vert_prev, u_hori_prev, w4|{
                     let u2 = u_vert_prev * u_vert_prev + u_hori_prev * u_hori_prev;
                     *feq += w4 * u2;
                 });
-                Zip::from(feq_slice.view_mut()).and(rho_prev_slice).for_each(|feq, rho_prev|{
+                Zip::from(&mut feq_slice).and(&rho_prev_slice).for_each(|feq, rho_prev|{
                     *feq *= C[(dr+1) as usize][(dc+1) as usize] * rho_prev;
                 });
             }
         }
         
-        let f_slice = self.f.slice_mut(s![margin..row-margin, margin..col-margin, .., ..]);
+        let mut f_slice = self.f.slice_mut(s![margin..row-margin, margin..col-margin, .., ..]);
         let feq_slice = self.feq.slice(s![margin..row-margin, margin..col-margin, .., ..]);
         let f_prev_slice = streamed_field.f.slice(s![margin..row-margin, margin..col-margin, .., ..]);
-        Zip::from(f_slice).and(feq_slice).and(f_prev_slice).for_each(|f, feq, f_prev| {
+        Zip::from(&mut f_slice).and(&feq_slice).and(&f_prev_slice).for_each(|f, feq, f_prev| {
             *f = (feq + f_prev) / 2.0;
         });
     }
