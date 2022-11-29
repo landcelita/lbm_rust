@@ -1,5 +1,6 @@
 use ndarray::{Array, Array2, Array4, arr0, arr2, stack, Axis, Zip, s};
 use ndarray_parallel::prelude::*;
+use std::f64::NAN;
 
 // 計算できない値についてはNaNを入れる
 // 外積(v x u)はdr * u_hori - dc * u_vert
@@ -111,11 +112,11 @@ impl InputField {
 
 impl StreamingWeight {
     pub fn new(row: usize, col: usize, margin: usize) -> StreamingWeight {
-        let mut w0 = Array4::<f64>::from_elem((row, col, 3, 3), f64::NAN);
-        let mut w1 = Array4::<f64>::from_elem((row, col, 3, 3), f64::NAN);
-        let mut dw0 = Array4::<f64>::from_elem((row, col, 3, 3), f64::NAN);
-        let mut dw1 = Array4::<f64>::from_elem((row, col, 3, 3), f64::NAN);
-        let mut delta = Array4::<f64>::from_elem((row, col, 3, 3), f64::NAN);
+        let mut w0 = Array4::<f64>::from_elem((row, col, 3, 3), NAN);
+        let mut w1 = Array4::<f64>::from_elem((row, col, 3, 3), NAN);
+        let mut dw0 = Array4::<f64>::from_elem((row, col, 3, 3), NAN);
+        let mut dw1 = Array4::<f64>::from_elem((row, col, 3, 3), NAN);
+        let mut delta = Array4::<f64>::from_elem((row, col, 3, 3), NAN);
         w0.slice_mut(s![margin..row-margin, margin..col-margin, .., ..]).fill(0.0);
         w1.slice_mut(s![margin..row-margin, margin..col-margin, .., ..]).fill(1.0);
         dw0.slice_mut(s![margin..row-margin, margin..col-margin, .., ..]).fill(0.0);
@@ -141,10 +142,10 @@ impl StreamingWeight {
 
 impl StreamedField {
     pub fn new(row: usize, col: usize, margin: usize) -> StreamedField {
-        let mut f = Array4::<f64>::from_elem((row, col, 3, 3), f64::NAN);
-        let mut u_vert = Array2::<f64>::from_elem((row, col), f64::NAN);
-        let mut u_hori = Array2::<f64>::from_elem((row, col), f64::NAN);
-        let mut rho = Array2::<f64>::from_elem((row, col), f64::NAN);
+        let mut f = Array4::<f64>::from_elem((row, col, 3, 3), NAN);
+        let mut u_vert = Array2::<f64>::from_elem((row, col), NAN);
+        let mut u_hori = Array2::<f64>::from_elem((row, col), NAN);
+        let mut rho = Array2::<f64>::from_elem((row, col), NAN);
         f.slice_mut(s![margin..row-margin, margin..col-margin, .., ..]).fill(0.0);
         u_vert.slice_mut(s![margin..row-margin, margin..col-margin]).fill(0.0);
         u_hori.slice_mut(s![margin..row-margin, margin..col-margin]).fill(0.0);
@@ -249,15 +250,15 @@ impl StreamedField {
 
 impl CollidingWeight {
     pub fn new(row: usize, col: usize, margin: usize) -> CollidingWeight {
-        let mut w1 = Array4::<f64>::from_elem((row, col, 3, 3), f64::NAN);
-        let mut w2 = Array4::<f64>::from_elem((row, col, 3, 3), f64::NAN);
-        let mut w3 = Array4::<f64>::from_elem((row, col, 3, 3), f64::NAN);
-        let mut w4 = Array4::<f64>::from_elem((row, col, 3, 3), f64::NAN);
-        let mut dw1 = Array4::<f64>::from_elem((row, col, 3, 3), f64::NAN);
-        let mut dw2 = Array4::<f64>::from_elem((row, col, 3, 3), f64::NAN);
-        let mut dw3 = Array4::<f64>::from_elem((row, col, 3, 3), f64::NAN);
-        let mut dw4 = Array4::<f64>::from_elem((row, col, 3, 3), f64::NAN);
-        let mut delta = Array4::<f64>::from_elem((row, col, 3, 3), f64::NAN);
+        let mut w1 = Array4::<f64>::from_elem((row, col, 3, 3), NAN);
+        let mut w2 = Array4::<f64>::from_elem((row, col, 3, 3), NAN);
+        let mut w3 = Array4::<f64>::from_elem((row, col, 3, 3), NAN);
+        let mut w4 = Array4::<f64>::from_elem((row, col, 3, 3), NAN);
+        let mut dw1 = Array4::<f64>::from_elem((row, col, 3, 3), NAN);
+        let mut dw2 = Array4::<f64>::from_elem((row, col, 3, 3), NAN);
+        let mut dw3 = Array4::<f64>::from_elem((row, col, 3, 3), NAN);
+        let mut dw4 = Array4::<f64>::from_elem((row, col, 3, 3), NAN);
+        let mut delta = Array4::<f64>::from_elem((row, col, 3, 3), NAN);
         w1.slice_mut(s![margin..row-margin, margin..col-margin, .., ..]).fill(3.0);
         w2.slice_mut(s![margin..row-margin, margin..col-margin, .., ..]).fill(0.0);
         w3.slice_mut(s![margin..row-margin, margin..col-margin, .., ..]).fill(4.5);
@@ -295,8 +296,8 @@ impl CollidingWeight {
 
 impl CollidedField {
     pub fn new(row: usize, col: usize, margin: usize) -> CollidedField {
-        let mut f = Array4::<f64>::from_elem((row, col, 3, 3), f64::NAN);
-        let mut feq = Array4::<f64>::from_elem((row, col, 3, 3), f64::NAN);
+        let mut f = Array4::<f64>::from_elem((row, col, 3, 3), NAN);
+        let mut feq = Array4::<f64>::from_elem((row, col, 3, 3), NAN);
         f.slice_mut(s![margin..row-margin, margin..col-margin, .., ..]).fill(0.0);
         feq.slice_mut(s![margin..row-margin, margin..col-margin, .., ..]).fill(0.0);
         CollidedField { row, col, margin, f, feq }
