@@ -1,4 +1,4 @@
-use ndarray::{Array, Array2, Array4, arr0, arr2, stack, Axis, Zip, s};
+use ndarray::{Array, Array2, Array4, arr0, arr2, stack, Axis, Zip, s, azip};
 use ndarray_parallel::prelude::*;
 use std::f64::NAN;
 
@@ -10,10 +10,12 @@ use std::f64::NAN;
 // 1. f:粒子密度  feq:eq場の粒子密度  u:風速  rho:密度
 // 1. w0,w1,w2,w3,w4:そのレイヤーの重み  dw0,dw1,dw2,dw3,dw4:重みの変化分
 // 2. _vert:縦,緯線方向(下向き正！)  _hori:横,経線方向(右向き正)
-// 3. _nx:次の  _nxnx:次の次の  _prev:前の
+// 3. _next:次の  _now:今の(例えばCollidingWeight->CollidedFieldという流れならWeightに対するfield)  _prev:前の
+// Weight(prev) -> Field(prev) -> Weight(now, あるいは添字なし) -> Field(now あるいは添字なし) -> Weight(next) -> Field(next)
 // row:行数  col:列数  r:r行(添字)  c:c列(添字) dr, dc
 // C:係数
 
+// TODO: 速度改善のために、[dr, dc, r, c]の順にするべきかも 遅かったら後で試してみる
 // TODO: fからu_vert, u_hori, rhoを計算するところは共通化できそう
 // TODO: それぞれの構造体がいまどういう状態か(stream()したか、collide()したか、重みの更新を行ったか)を記録して、不正な状態遷移を防ぐ
 
@@ -123,6 +125,49 @@ impl StreamingWeight {
         dw1.slice_mut(s![margin..row-margin, margin..col-margin, .., ..]).fill(0.0);
         delta.slice_mut(s![margin..row-margin, margin..col-margin, .., ..]).fill(0.0);
         StreamingWeight { row, col, margin, w0, w1, dw0, dw1, delta }
+    }
+
+    pub fn propagate_from_output(self: &mut Self, eta: f64, field_now: &StreamedField, field_prev: &CollidedField, u_vert_ans: &Array2<f64>, u_hori_ans: &Array2<f64>) {
+        let shape = [self.col, self.row];
+        if shape != [field_now.col, field_now.row] || shape != [field_prev.col, field_prev.col] || shape != u_vert_ans.shape() || shape != u_hori_ans.shape() {
+            panic!("panicked at line {} in {}", line!(), file!());
+        }
+        if self.margin != field_now.margin || self.margin != field_prev.margin + 1 {
+            panic!("panicked at line {} in {}", line!(), file!());
+        }
+
+        // rho_now_inv
+        let row = self.row as i32;
+        let col = self.col as i32;
+        let margin = self.margin as i32;
+        let mut inv_rho_now = Array2::<f64>::from_elem((self.row, self.col), NAN);
+        Zip::from(&mut inv_rho_now.slice_mut(s![margin..row-margin, margin..col-margin]))
+            .and(&field_now.rho.slice(s![margin..row-margin, margin..col-margin]))
+            .for_each(|inv_rho_now, rho_now| {
+                *inv_rho_now = 1.0 / rho_now;
+            });
+        for dr in -1..=1_i32 {
+            for dc in -1..=1_i32 {
+                Zip::from(&mut self.delta.slice_mut(s![margin..row-margin, margin..col-margin, dr+1, dc+1]))
+                    .and(&inv_rho_now.slice(s![margin..row-margin, margin..col-margin]))
+                    .and(&field_now.u_vert.slice(s![margin..row-margin, margin..col-margin]))
+                    .and(&field_now.u_hori.slice(s![margin..row-margin, margin..col-margin]))
+                    .and(&u_vert_ans.slice(s![margin..row-margin, margin..col-margin]))
+                    .and(&u_hori_ans.slice(s![margin..row-margin, margin..col-margin]))
+                    .for_each(|delta, inv_rho_now, u_vert_now, u_hori_now, u_vert_ans, u_hori_ans|{
+                        *delta = inv_rho_now * ((u_vert_now - u_vert_ans) * (dr as f64 - u_vert_now) + (u_hori_now - u_hori_ans) * (dc as f64 - u_hori_now));
+                    });
+
+                Zip::from(&mut self.dw0.slice_mut(s![margin..row-margin, margin..col-margin, dr+1, dc+1]))
+                    .and(&mut self.dw1.slice_mut(s![margin..row-margin, margin..col-margin, dr+1, dc+1]))
+                    .and(&self.delta.slice(s![margin..row-margin, margin..col-margin, dr+1, dc+1]))
+                    .and(&field_prev.f.slice(s![margin-dr..row-dr-margin, margin-dc..col-dc-margin, dr+1, dc+1]))
+                    .for_each(|dw0, dw1, delta, f_prev|{
+                        *dw0 = -eta * delta;
+                        *dw1 = *dw0 * f_prev;
+                    });
+            }
+        }
     }
 
     pub fn update(self: &mut Self) {
@@ -499,6 +544,53 @@ mod tests {
             assert_delta!( *collided_field.f.get((1, 1, 1, 1)).unwrap(), 21.760493827160495 / 2.0, ERROR_DELTA );
             assert_delta!( *collided_field.f.get((1, 1, 1, 2)).unwrap(), 8.177283950617283 / 2.0, ERROR_DELTA );
             assert_delta!( *collided_field.f.get((1, 1, 2, 0)).unwrap(), 10.5576543209876546 / 2.0, ERROR_DELTA );
+        }
+    }
+
+    #[test]
+    fn test_streaming_weight_propagate_from_output() {
+        let mut field_prev = CollidedField::new(3, 3, 0);
+        let mut streaming_weight = StreamingWeight::new(3, 3, 1);
+        let mut field_now = StreamedField::new(3, 3, 1);
+        let eta = 0.1;
+        let u_vert_ans = arr2(&[[NAN, NAN, NAN], [NAN, 0.2, NAN], [NAN, NAN, NAN]]);
+        let u_hori_ans = arr2(&[[NAN, NAN, NAN], [NAN, 0.5, NAN], [NAN, NAN, NAN]]);
+        field_now.u_vert.slice_mut(s![1, 1]).assign(&arr0( -2.0 / 45.0));
+        field_now.u_hori.slice_mut(s![1, 1]).assign(&arr0( 6.0 / 45.0));
+        field_now.rho.slice_mut(s![1, 1]).assign(&arr0(45.0));
+        field_prev.f = Array::range(1., 81.5, 1.).into_shape((3, 3, 3, 3)).unwrap();
+
+        for _ in 0..5 {
+            streaming_weight.propagate_from_output(eta, &field_now, &field_prev, &u_vert_ans, &u_hori_ans);
+            
+            for r in 0..=2 {
+                for c in 0..=2 {
+                    if r == 1 && c == 1 { continue; }
+    
+                    for dr in 0..=2 {
+                        for dc in 0..=2 {
+                            assert!( streaming_weight.delta.get((r, c, dr, dc)).unwrap().is_nan() );
+                            assert!( streaming_weight.w0.get((r, c, dr, dc)).unwrap().is_nan() );
+                            assert!( streaming_weight.w1.get((r, c, dr, dc)).unwrap().is_nan() );
+                        }
+                    }
+                }
+            }
+
+            assert_delta!( streaming_weight.delta.get((1, 1, 0, 1)).unwrap(), 0.00627709190672153635116, ERROR_DELTA );
+            assert_delta!( streaming_weight.delta.get((1, 1, 1, 2)).unwrap(), -0.0073031550068587105624, ERROR_DELTA );
+            assert_delta!( streaming_weight.delta.get((1, 1, 1, 1)).unwrap(), 0.00084499314128943758573, ERROR_DELTA );
+            assert_delta!( streaming_weight.delta.get((1, 1, 2, 0)).unwrap(), 0.00356104252400548696844, ERROR_DELTA );
+
+            assert_delta!( streaming_weight.dw0.get((1, 1, 0, 1)).unwrap(), -0.000627709190672153635116, ERROR_DELTA );
+            assert_delta!( streaming_weight.dw0.get((1, 1, 1, 2)).unwrap(), 0.0007303155006858710562414, ERROR_DELTA );
+            assert_delta!( streaming_weight.dw0.get((1, 1, 1, 1)).unwrap(), -0.000084499314128943758573, ERROR_DELTA );
+            assert_delta!( streaming_weight.dw0.get((1, 1, 2, 0)).unwrap(), -0.000356104252400548696844, ERROR_DELTA );
+
+            assert_delta!( streaming_weight.dw1.get((1, 1, 0, 1)).unwrap(), -0.0408010973936899862825788, ERROR_DELTA );
+            assert_delta!( streaming_weight.dw1.get((1, 1, 1, 2)).unwrap(), 0.0241004115226337448559670, ERROR_DELTA );
+            assert_delta!( streaming_weight.dw1.get((1, 1, 1, 1)).unwrap(), -0.0034644718792866941015089, ERROR_DELTA );
+            assert_delta!( streaming_weight.dw1.get((1, 1, 2, 0)).unwrap(), -0.0089026063100137174211248, ERROR_DELTA );
         }
     }
 }
